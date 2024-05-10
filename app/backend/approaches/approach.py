@@ -1,7 +1,7 @@
-import os
-from abc import ABC
-from dataclasses import dataclass
-from typing import (
+import os  # Importing the os module for operating system related functionalities
+from abc import ABC  # Importing the ABC class from the abc module for creating abstract base classes
+from dataclasses import dataclass  # Importing the dataclass decorator for creating data classes
+from typing import (  # Importing various types from the typing module for type hints
     Any,
     AsyncGenerator,
     Awaitable,
@@ -12,38 +12,38 @@ from typing import (
     Union,
     cast,
 )
-from urllib.parse import urljoin
+from urllib.parse import urljoin  # Importing the urljoin function from the urllib.parse module for URL manipulation
 
-import aiohttp
-from azure.search.documents.aio import SearchClient
-from azure.search.documents.models import (
+import aiohttp  # Importing the aiohttp library for making asynchronous HTTP requests
+from azure.search.documents.aio import SearchClient  # Importing the SearchClient class from the azure.search.documents.aio module for interacting with Azure Search
+from azure.search.documents.models import (  # Importing various models from the azure.search.documents.models module for Azure Search
     QueryCaptionResult,
     QueryType,
     VectorizedQuery,
     VectorQuery,
 )
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI  # Importing the AsyncOpenAI class from the openai module for interacting with OpenAI
 
-from core.authentication import AuthenticationHelper
-from text import nonewlines
+from core.authentication import AuthenticationHelper  # Importing the AuthenticationHelper class from the core.authentication module for authentication related functionalities
+from text import nonewlines  # Importing the nonewlines function from the text module for removing newlines from a string
 
-
-@dataclass
+@dataclass  # Decorator for creating a data class
 class Document:
-    id: Optional[str]
-    content: Optional[str]
-    embedding: Optional[List[float]]
-    image_embedding: Optional[List[float]]
-    category: Optional[str]
-    sourcepage: Optional[str]
-    sourcefile: Optional[str]
-    oids: Optional[List[str]]
-    groups: Optional[List[str]]
-    captions: List[QueryCaptionResult]
-    score: Optional[float] = None
-    reranker_score: Optional[float] = None
+    id: Optional[str]  # Optional string field for document ID
+    content: Optional[str]  # Optional string field for document content
+    embedding: Optional[List[float]]  # Optional list of floats field for document embedding
+    image_embedding: Optional[List[float]]  # Optional list of floats field for document image embedding
+    category: Optional[str]  # Optional string field for document category
+    sourcepage: Optional[str]  # Optional string field for document source page
+    sourcefile: Optional[str]  # Optional string field for document source file
+    oids: Optional[List[str]]  # Optional list of strings field for document oids
+    groups: Optional[List[str]]  # Optional list of strings field for document groups
+    captions: List[QueryCaptionResult]  # List of QueryCaptionResult objects for document captions
+    score: Optional[float] = None  # Optional float field for document score
+    reranker_score: Optional[float] = None  # Optional float field for document reranker score
 
     def serialize_for_results(self) -> dict[str, Any]:
+        """Serializes the Document object into a dictionary for results."""
         return {
             "id": self.id,
             "content": self.content,
@@ -75,7 +75,7 @@ class Document:
         """Returns a trimmed list of floats from the vector embedding."""
         if embedding:
             if len(embedding) > 2:
-                # Format the embedding list to show the first 2 items followed by the count of the remaining items."""
+                # Format the embedding list to show the first 2 items followed by the count of the remaining items.
                 return f"[{embedding[0]}, {embedding[1]} ...+{len(embedding) - 2} more]"
             else:
                 return str(embedding)
@@ -83,14 +83,14 @@ class Document:
         return None
 
 
-@dataclass
+@dataclass  # Decorator for creating a data class
 class ThoughtStep:
-    title: str
-    description: Optional[Any]
-    props: Optional[dict[str, Any]] = None
+    title: str  # String field for thought step title
+    description: Optional[Any]  # Optional field for thought step description
+    props: Optional[dict[str, Any]] = None  # Optional dictionary field for thought step properties
 
 
-class Approach(ABC):
+class Approach(ABC):  # Abstract base class for different approaches
     def __init__(
         self,
         search_client: SearchClient,
@@ -105,19 +105,20 @@ class Approach(ABC):
         vision_endpoint: str,
         vision_token_provider: Callable[[], Awaitable[str]],
     ):
-        self.search_client = search_client
-        self.openai_client = openai_client
-        self.auth_helper = auth_helper
-        self.query_language = query_language
-        self.query_speller = query_speller
-        self.embedding_deployment = embedding_deployment
-        self.embedding_model = embedding_model
-        self.embedding_dimensions = embedding_dimensions
-        self.openai_host = openai_host
-        self.vision_endpoint = vision_endpoint
-        self.vision_token_provider = vision_token_provider
+        self.search_client = search_client  # Initializing the search client
+        self.openai_client = openai_client  # Initializing the OpenAI client
+        self.auth_helper = auth_helper  # Initializing the authentication helper
+        self.query_language = query_language  # Setting the query language
+        self.query_speller = query_speller  # Setting the query speller
+        self.embedding_deployment = embedding_deployment  # Setting the embedding deployment
+        self.embedding_model = embedding_model  # Setting the embedding model
+        self.embedding_dimensions = embedding_dimensions  # Setting the embedding dimensions
+        self.openai_host = openai_host  # Setting the OpenAI host
+        self.vision_endpoint = vision_endpoint  # Setting the vision endpoint
+        self.vision_token_provider = vision_token_provider  # Setting the vision token provider
 
     def build_filter(self, overrides: dict[str, Any], auth_claims: dict[str, Any]) -> Optional[str]:
+        """Builds the filter based on overrides and authentication claims."""
         exclude_category = overrides.get("exclude_category")
         security_filter = self.auth_helper.build_security_filters(overrides, auth_claims)
         filters = []
@@ -138,8 +139,9 @@ class Approach(ABC):
         minimum_search_score: Optional[float],
         minimum_reranker_score: Optional[float],
     ) -> List[Document]:
-        # Use semantic ranker if requested and if retrieval mode is text or hybrid (vectors + text)
+        """Performs a search and returns a list of qualified documents."""
         if use_semantic_ranker and query_text:
+            # Use semantic ranker if requested and if retrieval mode is text or hybrid (vectors + text)
             results = await self.search_client.search(
                 search_text=query_text,
                 filter=filter,
@@ -190,6 +192,7 @@ class Approach(ABC):
     def get_sources_content(
         self, results: List[Document], use_semantic_captions: bool, use_image_citation: bool
     ) -> list[str]:
+        """Returns the content of the sources based on the search results."""
         if use_semantic_captions:
             return [
                 (self.get_citation((doc.sourcepage or ""), use_image_citation))
@@ -204,6 +207,7 @@ class Approach(ABC):
             ]
 
     def get_citation(self, sourcepage: str, use_image_citation: bool) -> str:
+        """Returns the citation for a source page."""
         if use_image_citation:
             return sourcepage
         else:
@@ -216,6 +220,7 @@ class Approach(ABC):
             return sourcepage
 
     async def compute_text_embedding(self, q: str):
+        """Computes the text embedding using OpenAI."""
         SUPPORTED_DIMENSIONS_MODEL = {
             "text-embedding-ada-002": False,
             "text-embedding-3-small": True,
@@ -229,7 +234,6 @@ class Approach(ABC):
             {"dimensions": self.embedding_dimensions} if SUPPORTED_DIMENSIONS_MODEL[self.embedding_model] else {}
         )
         embedding = await self.openai_client.embeddings.create(
-            # Azure OpenAI takes the deployment name as the model name
             model=self.embedding_deployment if self.embedding_deployment else self.embedding_model,
             input=q,
             **dimensions_args,
@@ -238,6 +242,7 @@ class Approach(ABC):
         return VectorizedQuery(vector=query_vector, k_nearest_neighbors=50, fields="embedding")
 
     async def compute_image_embedding(self, q: str):
+        """Computes the image embedding using Azure Computer Vision."""
         endpoint = urljoin(self.vision_endpoint, "computervision/retrieval:vectorizeText")
         headers = {"Content-Type": "application/json"}
         params = {"api-version": "2023-02-01-preview", "modelVersion": "latest"}
@@ -256,4 +261,5 @@ class Approach(ABC):
     async def run(
         self, messages: list[dict], stream: bool = False, session_state: Any = None, context: dict[str, Any] = {}
     ) -> Union[dict[str, Any], AsyncGenerator[dict[str, Any], None]]:
+        """Runs the approach."""
         raise NotImplementedError
