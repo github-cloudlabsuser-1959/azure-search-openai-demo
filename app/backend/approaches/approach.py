@@ -29,9 +29,10 @@ from text import nonewlines  # Importing the nonewlines function from the text m
 
 @dataclass  # Decorator for creating a data class
 class Document:
-    id: Optional[str]  # Optional string field for document ID
-    content: Optional[str]  # Optional string field for document content
-    embedding: Optional[List[float]]  # Optional list of floats field for document embedding
+title: Optional[str]  # Optional string field for document title
+description: Optional[str]  # Optional string field for document description
+author: Optional[str]  # Optional string field for document author
+publication_date: Optional[str]  # Optional string field for document publication date
     image_embedding: Optional[List[float]]  # Optional list of floats field for document image embedding
     category: Optional[str]  # Optional string field for document category
     sourcepage: Optional[str]  # Optional string field for document source page
@@ -42,6 +43,9 @@ class Document:
     score: Optional[float] = None  # Optional float field for document score
     reranker_score: Optional[float] = None  # Optional float field for document reranker score
 
+    self.id: Optional[str]  # Optional string field for document id
+    self.content: Optional[str]  # Optional string field for document content
+    self.embedding: Optional[List[float]]  # Optional list of floats field for document embedding
     def serialize_for_results(self) -> dict[str, Any]:
         """Serializes the Document object into a dictionary for results."""
         return {
@@ -129,70 +133,95 @@ class Approach(ABC):  # Abstract base class for different approaches
         return None if len(filters) == 0 else " and ".join(filters)
 
     async def search(
-        self,
-        top: int,
-        query_text: Optional[str],
-        filter: Optional[str],
-        vectors: List[VectorQuery],
-        use_semantic_ranker: bool,
-        use_semantic_captions: bool,
-        minimum_search_score: Optional[float],
-        minimum_reranker_score: Optional[float],
-    ) -> List[Document]:
-        """Performs a search and returns a list of qualified documents."""
-        if use_semantic_ranker and query_text:
-            # Use semantic ranker if requested and if retrieval mode is text or hybrid (vectors + text)
-            results = await self.search_client.search(
-                search_text=query_text,
-                filter=filter,
-                query_type=QueryType.SEMANTIC,
-                query_language=self.query_language,
-                query_speller=self.query_speller,
-                semantic_configuration_name="default",
-                top=top,
-                query_caption="extractive|highlight-false" if use_semantic_captions else None,
-                vector_queries=vectors,
-            )
-        else:
-            results = await self.search_client.search(
-                search_text=query_text or "", filter=filter, top=top, vector_queries=vectors
-            )
+            self,
+            top: int,
+            query_text: Optional[str],
+            filter: Optional[str],
+            vectors: List[VectorQuery],
+            use_semantic_ranker: bool,
+            use_semantic_captions: bool,
+            minimum_search_score: Optional[float],
+            minimum_reranker_score: Optional[float],
+        ) -> List[Document]:
+            """Performs a search and returns a list of qualified documents.
 
-        documents = []
-        async for page in results.by_page():
-            async for document in page:
-                documents.append(
-                    Document(
-                        id=document.get("id"),
-                        content=document.get("content"),
-                        embedding=document.get("embedding"),
-                        image_embedding=document.get("imageEmbedding"),
-                        category=document.get("category"),
-                        sourcepage=document.get("sourcepage"),
-                        sourcefile=document.get("sourcefile"),
-                        oids=document.get("oids"),
-                        groups=document.get("groups"),
-                        captions=cast(List[QueryCaptionResult], document.get("@search.captions")),
-                        score=document.get("@search.score"),
-                        reranker_score=document.get("@search.reranker_score"),
+            Args:
+                top (int): The maximum number of documents to return.
+                query_text (Optional[str]): The search query text.
+                filter (Optional[str]): The filter to apply to the search results.
+                vectors (List[VectorQuery]): The vector queries to use for semantic search.
+                use_semantic_ranker (bool): Whether to use the semantic ranker for retrieval.
+                use_semantic_captions (bool): Whether to include captions in the search results.
+                minimum_search_score (Optional[float]): The minimum search score for qualifying documents.
+                minimum_reranker_score (Optional[float]): The minimum reranker score for qualifying documents.
+
+            Returns:
+                List[Document]: A list of qualified documents.
+
+            """
+            if use_semantic_ranker and query_text:
+                # Use semantic ranker if requested and if retrieval mode is text or hybrid (vectors + text)
+                results = await self.search_client.search(
+                    search_text=query_text,
+                    filter=filter,
+                    query_type=QueryType.SEMANTIC,
+                    query_language=self.query_language,
+                    query_speller=self.query_speller,
+                    semantic_configuration_name="default",
+                    top=top,
+                    query_caption="extractive|highlight-false" if use_semantic_captions else None,
+                    vector_queries=vectors,
+                )
+            else:
+                results = await self.search_client.search(
+                    search_text=query_text or "", filter=filter, top=top, vector_queries=vectors
+                )
+
+            documents = []
+            async for page in results.by_page():
+                async for document in page:
+                    documents.append(
+                        Document(
+                            id=document.get("id"),
+                            content=document.get("content"),
+                            embedding=document.get("embedding"),
+                            image_embedding=document.get("imageEmbedding"),
+                            category=document.get("category"),
+                            sourcepage=document.get("sourcepage"),
+                            sourcefile=document.get("sourcefile"),
+                            oids=document.get("oids"),
+                            groups=document.get("groups"),
+                            captions=cast(List[QueryCaptionResult], document.get("@search.captions")),
+                            score=document.get("@search.score"),
+                            reranker_score=document.get("@search.reranker_score"),
+                        )
                     )
-                )
 
-            qualified_documents = [
-                doc
-                for doc in documents
-                if (
-                    (doc.score or 0) >= (minimum_search_score or 0)
-                    and (doc.reranker_score or 0) >= (minimum_reranker_score or 0)
-                )
-            ]
+                qualified_documents = [
+                    doc
+                    for doc in documents
+                    if (
+                        (doc.score or 0) >= (minimum_search_score or 0)
+                        and (doc.reranker_score or 0) >= (minimum_reranker_score or 0)
+                    )
+                ]
 
-        return qualified_documents
+            return qualified_documents
 
     def get_sources_content(
         self, results: List[Document], use_semantic_captions: bool, use_image_citation: bool
     ) -> list[str]:
-        """Returns the content of the sources based on the search results."""
+        """Returns the content of the sources based on the search results.
+
+        Args:
+            results (List[Document]): The list of search results.
+            use_semantic_captions (bool): Whether to use semantic captions.
+            use_image_citation (bool): Whether to use image citation.
+
+        Returns:
+            List[str]: The content of the sources.
+
+        """
         if use_semantic_captions:
             return [
                 (self.get_citation((doc.sourcepage or ""), use_image_citation))
